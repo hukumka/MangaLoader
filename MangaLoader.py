@@ -1,8 +1,9 @@
-from urllib.request import urlopen
+import requests
 from lxml import html
 import os, errno
 import pathlib
 from itertools import count
+from bs4 import BeautifulSoup
 
 
 class MangaLoader:
@@ -184,15 +185,62 @@ class PageImage:
         """
         root = html.parse(url).getroot()
         self.__image_path = root.get_element_by_id('img-1').get("src")
-        self.__data = urlopen(self.__image_path)
 
     def save(self, path):
-        with open(path + '.' + self.get_img_url_ext(self.__image_path), 'wb') as f:
-            f.write(self.__data.read())
+        save_from_url(self.__image_path, path + "." + self.get_img_url_ext(self.__image_path))
 
     @staticmethod
     def get_img_url_ext(url):
         return url.split('?')[0].split('.')[-1]
+
+
+def save_from_url(url, path, chunk_size=16*1024):
+    try:
+        r = requests.get(url)
+        with open(path, 'wb') as f:
+            for chunk in r.iter_content(chunk_size=chunk_size):
+                if chunk:
+                    f.write(chunk)
+        r.close()
+    except Exception as e:
+        # Do not let broken files appear
+        os.remove(path)
+        raise e
+
+
+def find_manga(name):
+    """ find manga path on mangapark.me """
+    queue = name.replace(" ", "+")
+    r = requests.get("http://mangapark.me/search?q={}&orderby=views".format(queue))
+    if(r.status_code == 200):
+        soup = BeautifulSoup(r.text, 'html.parser')
+        div_boxes = soup.find_all('div', class_=lambda cls: (cls is not None and cls.startswith('item first')) )
+        if len(div_boxes) >= 1:
+            return get_manga_url_from_block(div_boxes[0])
+        elif len(div_boxes) == 0:
+            raise FindMangaError("Cannot find corresponding manga")
+        else:
+            raise FindMangaError("Unsertain which manga to choose")
+    else:
+        r.raise_for_status()
+
+
+def get_manga_url_from_block(block):
+    urls = block.find_all("a", class_="cover")
+    if len(urls) == 0:
+        raise FindMangaError("Invalid manga block")
+    else:
+        prefix = '/manga/'
+        url = urls[0].get('href')
+        if url.startswith(prefix):
+            return url[len(prefix):]
+        else:
+            raise FindMangaError("Invalid manga block")
+
+
+class FindMangaError(Exception):
+    pass
+
 
 
 def ensure_dir(dir_path):
@@ -213,11 +261,12 @@ def load_manga(name, path):
     :param name: manga name
     :param path: manga path
     """
-    loader = MangaLoader(name, path)
+    url = find_manga(name)
+    loader = MangaLoader(url, path)
     if not loader.is_valid():
-        loader = MangaLoaderNoVolume(name, path)
+        loader = MangaLoaderNoVolume(url, path)
     loader.save_all()
 
 
 if __name__ == '__main__':
-    load_manga('anima', 'D:\\manga')
+    load_manga('tokyo ghoul', '/home/hukumka/manga/')

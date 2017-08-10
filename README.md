@@ -1,5 +1,7 @@
 # MangaLoader
 load manga from mangapark.me
 
-depend on:
-pathlib, lxml
+require:
+	python3
+
+	pathlib, lxml, requests
