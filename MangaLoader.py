@@ -12,9 +12,9 @@ class MangaLoader:
     if manga matches format: volume - chapter - page
     """
     def __init__(self, manga_name_url, save_path, version="s1"):
-        self.__manga_name = manga_name_url
-        self.__version = version
-        self.__save_path = save_path
+        self._manga_name = manga_name_url
+        self._version = version
+        self._save_path = save_path
 
     def is_valid(self):
         """Check if manga exist and matches volume - chapter - page format"""
@@ -121,8 +121,8 @@ class MangaLoader:
 
     def page_path(self, volume, chapter, page):
         return "http://mangapark.me/manga/{name}/{ver}/v{vol}/c{chap}/{page}".format(
-            name=self.__manga_name,
-            ver=self.__version,
+            name=self._manga_name,
+            ver=self._version,
             vol=volume,
             chap=chapter,
             page=page
@@ -136,7 +136,7 @@ class MangaLoader:
         return list(pathlib.Path(dir).glob(name + '.*'))  # if any exist list not empty and it interpreted as True
 
     def manga_save_path(self):
-        return os.path.join(self.__save_path, self.__manga_name)
+        return os.path.join(self._save_path, self._manga_name)
 
     def vol_save_path(self, volume):
         return os.path.join(self.manga_save_path(), "{:03d}".format(volume))
@@ -165,8 +165,8 @@ class MangaLoaderNoVolume(MangaLoader):
     def page_path(self, _, chapter, page):
         # suppress volume value so url meet required format
         return "http://mangapark.me/manga/{name}/{ver}/c{chap}/{page}".format(
-            name=self.__manga_name,
-            ver=self.__version,
+            name=self._manga_name,
+            ver=self._version,
             chap=chapter,
             page=page
         )
@@ -183,10 +183,16 @@ class PageImage:
         """
         :param url: manga page url (not image url)
         """
-        root = html.parse(url).getroot()
-        self.__image_path = root.get_element_by_id('img-1').get("src")
+        r = requests.get(url)
+        if r.status_code == 200:
+            root = BeautifulSoup(r.text, 'html.parser')
+            self.__image_path = root.find(id="img-1")["src"]
+        else:
+            r.raise_for_status()
 
     def save(self, path):
+        if not self.__image_path.startswith("https:"):
+            self.__image_path = "https:" + self.__image_path
         save_from_url(self.__image_path, path + "." + self.get_img_url_ext(self.__image_path))
 
     @staticmethod
@@ -204,7 +210,8 @@ def save_from_url(url, path, chunk_size=16*1024):
         r.close()
     except Exception as e:
         # Do not let broken files appear
-        os.remove(path)
+        if os.path.isfile(path):
+            os.remove(path)
         raise e
 
 
@@ -262,6 +269,7 @@ def load_manga(name, path):
     :param path: manga path
     """
     url = find_manga(name)
+    print(url)
     loader = MangaLoader(url, path)
     if not loader.is_valid():
         loader = MangaLoaderNoVolume(url, path)
@@ -269,4 +277,4 @@ def load_manga(name, path):
 
 
 if __name__ == '__main__':
-    load_manga('tokyo ghoul', '/home/hukumka/manga/')
+    load_manga('tokyo ghoul', 'D:/manga/tg')
